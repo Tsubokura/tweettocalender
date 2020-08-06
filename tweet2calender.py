@@ -19,7 +19,6 @@ CONSUMER_KEY = env.CONSUMER_KEY
 CONSUMER_SECRET = env.CONSUMER_SECRET
 ACCESS_TOKEN = env.ACCESS_TOKEN
 ACCESS_TOKEN_SECRET = env.ACCESS_TOKEN_SECRET
-
 twitter = OAuth1Session(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -27,6 +26,16 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 def get_tweets_contents(id):
     url = "https://api.twitter.com/1.1/statuses/show.json"
     res = twitter.get(url, params={'id': id})
+    rimit_tweet = res.headers['X-Rate-Limit-Remaining']
+    rimitime_tweet = res.headers['X-Rate-Limit-Reset']
+    print("tweet_limit %s" %rimit_tweet)
+
+    if rimit_tweet == "0":
+        reset_seconds = float(rimitime_tweet) - time.mktime(datetime.now().timetuple())
+        reset_seconds = max(reset_seconds, 0)
+        print("gettweets sleep in %s seconds" %reset_seconds)
+        time.sleep(reset_seconds + 10)
+
     if res.status_code == 200:
         r = json.loads(res.text)
         contents = r['text']
@@ -34,44 +43,8 @@ def get_tweets_contents(id):
         return contents, date
     return False, False #2 returns or 1 returns ???
 
-def make_events(contents, date, creds):
-    if contents != False and date != False:
-        date_jst = parser.parse(date).astimezone(timezone('Asia/Tokyo'))
-        date_year, date_month, date_day = date_jst.year, date_jst.month, date_jst.day
-
-        body = {
-            # 予定のタイトル
-            'summary': contents,
-            # 予定の開始時刻
-            'start': {
-                'dateTime': datetime(date_year, date_month, date_day, 10, 00).isoformat(),
-                'timeZone': 'Japan'
-            },
-            # 予定の終了時刻
-            'end': {
-                'dateTime': datetime(date_year, date_month, date_day, 12, 00).isoformat(),
-                'timeZone': 'Japan'
-            },
-        }
-        service = build('calendar', 'v3', credentials=creds)
-
-        event = service.events().insert(calendarId='nekodaisuki169@gmail.com',body=body).execute()
-
-        print("success")
-
-        return True
-    return False
-
-def get_mytweet_list():
-    url = "https://api.twitter.com/1.1/statuses/user_timeline.json"
-    params = {'screen_name': user_id, 'count': 4000, 'include_rts': False}#not incliude RTs
-    res = twitter.get(url, params=params)
-    if res.status_code == 200:
-        r = json.loads(res.text)#json 型 to dictionary 型
-        return [tweet["id"] for tweet in r ]
-
 def isexist_tweetids(id):
-    path = '/Users/sota/programing/python/tweetids.txt'
+    path = '/Users/sota/programing/python/tweettocalender/tweetids.txt'
     with open(path, mode = 'r') as f:
         exsist_ids_str = [s.strip() for s in f.readlines()]
         exsist_ids = [int(i) for i in exsist_ids_str]
@@ -82,44 +55,59 @@ def isexist_tweetids(id):
                 g.write(str(id) + "\n")
                 return True
 
-def checkLimit():
-        url = "https://api.twitter.com/1.1/statuses/user_timeline.json"
-        params = {'screen_name': user_id, 'count': 1}
-        res = twitter.get(url, params = params)
+def make_events(contents, date, creds):
+    if contents != False and date != False:
+        date_jst = parser.parse(date).astimezone(timezone('Asia/Tokyo'))
+        date_year, date_month, date_day = date_jst.year, date_jst.month, date_jst.day
 
-        if res.status_code != 200:
-            raise Exception('Twitter API error %d' % res.status_code)
+        body = {
+            'summary': contents,
+            'start': {
+                'dateTime': datetime(date_year, date_month, date_day, 10, 00).isoformat(),
+                'timeZone': 'Japan'
+            },
+            'end': {
+                'dateTime': datetime(date_year, date_month, date_day, 12, 00).isoformat(),
+                'timeZone': 'Japan'
+            },
+        }
 
-        remaining, reset = res.headers['X-Rate-Limit-Remaining'], res.headers['X-Rate-Limit-Reset']
-        print(remaining)
-        print(reset)
-        if (remaining == 0) or (res.status_code == 429):
-            print("sleep for regettting tweet")
-            waitUntilReset(reset)
-        else:
-            pass
+        service = build('calendar', 'v3', credentials=creds)
+        event = service.events().insert(calendarId='nekodaisuki169@gmail.com',body=body).execute()
+        return True
 
-def waitUntilReset(reset):
-    '''
-    reset 時刻まで sleep
-    '''
-    seconds = int(reset) - time.mktime(datetime.now().timetuple())
-    seconds = max(seconds, 0)
-    print ('\n     =====================', flush = True)
-    print ('     == waiting %d sec ==' % seconds, flush = True)
-    print ('     =====================', flush = True)
+    return False
 
-    time.sleep(seconds + 10)
+def get_mytweet_list(maxid):
+    url = "https://api.twitter.com/1.1/statuses/user_timeline.json"
+
+    if maxid == None:
+        params = {'screen_name': user_id, 'count': 200, 'include_rts': False}#not incliude RTs
+    else:
+        params = {'screen_name': user_id, 'count': 200, 'include_rts': False, "max_id":maxid}
+
+    res = twitter.get(url, params=params)
+    rimit_tweetlist = res.headers['X-Rate-Limit-Remaining']
+    rimitime_tweetlist = res.headers['X-Rate-Limit-Reset']
+    print("tweet_limitlist %s" %rimit_tweetlist)
+
+    if rimit_tweetlist == "0":
+        reset_seconds = float(rimitime_tweetlist) - time.mktime(datetime.now().timetuple())
+        reset_seconds = max(reset_seconds, 0)
+        print("gettweetlist sleep in %s seconds" %reset_seconds)
+        time.sleep(reset_seconds + 10)
+
+    if res.status_code == 200:
+        r = json.loads(res.text)#json 型 to dictionary 型
+        return [tweet["id"] for tweet in r ]
 
 def main():
     creds = None
-    # The file token.pickle stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
+
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             creds = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -127,24 +115,25 @@ def main():
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
         with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
+            pickle.dump(creds, token)#解読したい
 
-
+    old_id = None
     while True:
-        ids = get_mytweet_list()
+        ids = get_mytweet_list(old_id)
+        old_id = ids[-1]
+        print(old_id)
+
         if ids :
             for id in ids:
-                checkLimit()
                 if isexist_tweetids(id):
-                    print(id)
                     contents, date = get_tweets_contents(id)
                     make_events(contents, date, creds)
+                    print("%s id tweet to calender" %id)
                 else:
-                    print("exist" + str(id))
-        print("end")
-        time.sleep(300)
+                    print("%s id exist in calender " + %id)
+                    print("tweet to calender process end")
+                    sys.exit(0)
 
 if __name__ == "__main__":
     main()
